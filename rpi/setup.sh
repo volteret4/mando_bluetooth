@@ -26,8 +26,33 @@ systemctl daemon-reload
 systemctl restart bluetooth
 sleep 2
 
+# Unblock Bluetooth if rfkill has it soft- or hard-blocked
+echo "Desbloqueando Bluetooth (rfkill)..."
+rfkill unblock bluetooth
+rfkill unblock all   # por si hay un bloqueo genérico
+sleep 1
+
+# Verify rfkill state
+if rfkill list bluetooth 2>/dev/null | grep -q "Soft blocked: yes"; then
+    echo "[ERROR] El Bluetooth sigue bloqueado por software."
+    echo "        Comprueba 'rfkill list' y desbloquea manualmente con: rfkill unblock bluetooth"
+    exit 1
+fi
+if rfkill list bluetooth 2>/dev/null | grep -q "Hard blocked: yes"; then
+    echo "[ERROR] El Bluetooth está bloqueado por hardware (interruptor físico o firmware)."
+    echo "        En la RPi esto puede indicar un problema con el firmware de la placa."
+    echo "        Asegúrate de que /boot/config.txt NO tenga 'dtoverlay=disable-bt'"
+    exit 1
+fi
+
+# Bring up the adapter
+if ! hciconfig hci0 up 2>/dev/null; then
+    echo "[ERROR] No se puede levantar hci0."
+    echo "        Intenta: sudo systemctl restart bluetooth && rfkill unblock bluetooth"
+    exit 1
+fi
+
 # Keyboard device class: Major=Peripheral(0x05,0x10), Minor=Keyboard(0x40)
-hciconfig hci0 up
 hciconfig hci0 class 0x000540
 hciconfig hci0 piscan
 hciconfig hci0 name "RPi-BT-Keyboard"

@@ -1,0 +1,11 @@
+.env*
+**/.env*
+*.db*
+**/.db*
+*.json*
+**/.json*
+*.csv*
+**/.csv*
+**/__pycache__/
+client_secret.json
+client_secret*·json
