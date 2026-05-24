@@ -10,13 +10,22 @@ echo "=== BT HID Setup for Raspberry Pi 4 ==="
 apt-get update -q
 apt-get install -y python3 python3-dbus python3-gi bluez bluez-tools
 
-# Enable BlueZ compatibility mode (needed for sdptool)
+# Enable BlueZ compatibility mode + disable input plugin
+# --compat       → enables sdptool SDP socket
+# --noplugin=input → stops BlueZ input plugin from claiming HID PSMs 0x11/0x13
+#                    (those PSMs must be free for our server to bind to them)
 BT_SERVICE=/lib/systemd/system/bluetooth.service
-if grep -q "ExecStart=.*--compat" "$BT_SERVICE"; then
-    echo "[OK] BlueZ already in compat mode"
+DESIRED_FLAGS="--compat --noplugin=input"
+
+if grep -q "ExecStart=.*--noplugin=input" "$BT_SERVICE"; then
+    echo "[OK] BlueZ flags already set ($DESIRED_FLAGS)"
+elif grep -q "ExecStart=.*--compat" "$BT_SERVICE"; then
+    # --compat present but --noplugin=input missing
+    sed -i "s|ExecStart=/usr/lib/bluetooth/bluetoothd --compat|ExecStart=/usr/lib/bluetooth/bluetoothd $DESIRED_FLAGS|" "$BT_SERVICE"
+    echo "[OK] Added --noplugin=input to BlueZ flags"
 else
-    sed -i 's|ExecStart=/usr/lib/bluetooth/bluetoothd|ExecStart=/usr/lib/bluetooth/bluetoothd --compat|' "$BT_SERVICE"
-    echo "[OK] BlueZ compat mode enabled"
+    sed -i "s|ExecStart=/usr/lib/bluetooth/bluetoothd|ExecStart=/usr/lib/bluetooth/bluetoothd $DESIRED_FLAGS|" "$BT_SERVICE"
+    echo "[OK] BlueZ flags set: $DESIRED_FLAGS"
 fi
 
 # Make sdptool writable by the bluetooth group
