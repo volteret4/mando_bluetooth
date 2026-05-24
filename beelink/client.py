@@ -22,6 +22,9 @@ RPI_DEFAULT_PORT = 5555
 
 HELP = """
 === BT Keyboard Client ===
+Emparejamiento:
+  pin:123456    — enviar el código de 6 dígitos que muestra la TV
+
 Navigation:
   up / down / left / right / enter / esc / back / home / pgup / pgdn
 
@@ -120,6 +123,14 @@ def parse_input(text: str) -> dict | None:
         except json.JSONDecodeError as e:
             print(f"JSON error: {e}")
             return None
+
+    # pin:<digits> — supply pairing PIN shown on TV
+    if text.lower().startswith("pin:"):
+        code = text[4:].strip()
+        if not code.isdigit() or len(code) != 6:
+            print("El PIN debe tener exactamente 6 dígitos numéricos")
+            return None
+        return {"action": "pin", "code": code}
 
     # type:<text> shorthand
     if text.lower().startswith("type:"):

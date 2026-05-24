@@ -12,6 +12,7 @@ Protocol (TCP, newline-delimited JSON):
     {"action": "media", "key": "VOLUP"}           -> consumer/media key
     {"action": "combo", "mod": "LCTRL", "key": "C"} -> modifier + key
     {"action": "type",  "text": "hello"}          -> type a string
+    {"action": "pin",   "code": "123456"}         -> supply pairing PIN
 """
 
 import argparse
@@ -23,6 +24,7 @@ import sys
 import threading
 import time
 
+from pairing_agent import PairingManager
 from hid import (
     HID_DESCRIPTOR,
     KEY_CODES,
@@ -60,7 +62,8 @@ _ASCII_TO_HID[' '] = (MOD_NONE, KEY_CODES["SPACE"])
 
 
 class BTHIDKeyboard:
-    def __init__(self):
+    def __init__(self, pairing_manager: PairingManager):
+        self._pairing = pairing_manager
         self._ctrl_server: socket.socket | None = None
         self._intr_server: socket.socket | None = None
         self._ctrl_client: socket.socket | None = None
@@ -252,6 +255,13 @@ class BTHIDKeyboard:
             self.type_text(text)
             return f"typed:{len(text)} chars"
 
+        if action == "pin":
+            code = str(msg.get("code", "")).strip()
+            if not code.isdigit() or len(code) != 6:
+                return "PIN must be exactly 6 digits"
+            self._pairing.provide_pin(code)
+            return f"pin:{code} sent to pairing agent"
+
         return f"Unknown action: {action}"
 
     @property
@@ -282,7 +292,8 @@ def handle_tcp_client(conn: socket.socket, addr: tuple, keyboard: BTHIDKeyboard)
                 except json.JSONDecodeError as e:
                     conn.sendall(f'{{"error": "bad json: {e}"}}\n'.encode())
                     continue
-                if not keyboard.is_connected:
+                # pin action is allowed even before HID connection (pairing phase)
+                if not keyboard.is_connected and msg.get("action") != "pin":
                     conn.sendall(b'{"error": "no BT connection"}\n')
                     continue
                 result = keyboard.dispatch(msg)
@@ -320,7 +331,10 @@ def main() -> None:
     if sys.platform != "linux":
         sys.exit("This script requires Linux with BlueZ.")
 
-    keyboard = BTHIDKeyboard()
+    pairing = PairingManager()
+    pairing.start()
+
+    keyboard = BTHIDKeyboard(pairing)
     keyboard.setup_bluetooth()
 
     tcp_thread = threading.Thread(
