@@ -9,6 +9,7 @@ and return it to BlueZ, which completes the Diffie-Hellman key exchange.
 
 import logging
 import threading
+import time
 
 import dbus
 import dbus.mainloop.glib
@@ -40,8 +41,16 @@ class _PairingAgent(dbus.service.Object):
 
     @dbus.service.method(AGENT_INTERFACE, in_signature="ou", out_signature="")
     def RequestConfirmation(self, device, passkey):
-        # Numeric comparison — just confirm
-        log.info("Confirming passkey %06d for %s", passkey, device)
+        # SSP Numeric Comparison: TV shows this code and asks user to confirm.
+        # The user must press "Yes/Confirm" on the TV. We auto-confirm on RPi side.
+        print("\n" + "=" * 52)
+        print(f"  EMPAREJAMIENTO Bluetooth")
+        print(f"  Código en pantalla de la TV: {passkey:06d}")
+        print(f"  ► Pulsa CONFIRMAR/SÍ en la TV para emparejar")
+        print("=" * 52 + "\n", flush=True)
+        log.info("RequestConfirmation: passkey=%06d device=%s", passkey, device)
+        # Small delay so the user sees the message before the pairing dialog closes
+        time.sleep(1)
 
     @dbus.service.method(AGENT_INTERFACE, in_signature="o", out_signature="s")
     def RequestPinCode(self, device):

@@ -91,18 +91,32 @@ class BTHIDKeyboard:
         self._register_sdp()
 
     def _register_sdp(self) -> None:
-        # Try sdptool built-in HID profile first (correct syntax, no --xml)
+        import os
+
+        # The SDP socket can be at /run/sdp or /var/run/sdp (symlink on modern systems)
+        sdp_socket = next(
+            (p for p in ("/run/sdp", "/var/run/sdp") if os.path.exists(p)), None
+        )
+        if sdp_socket is None:
+            log.warning(
+                "SDP socket not found at /run/sdp or /var/run/sdp. "
+                "bluetoothd may not be running with --compat. "
+                "Run: sudo systemctl cat bluetooth | grep ExecStart"
+            )
+            log.warning("Falling back to DBus ProfileManager1…")
+            self._register_sdp_dbus()
+            return
+
         r = subprocess.run(
             ["sdptool", "-i", "hci0", "add", "--handle=0x00010001", "HID"],
             capture_output=True, text=True,
         )
         if r.returncode == 0:
-            log.info("SDP HID record registered via sdptool")
+            log.info("SDP HID record registered via sdptool (socket: %s)", sdp_socket)
             self._verify_sdp()
-            return
-
-        log.warning("sdptool add HID failed (%s), trying DBus fallback…", r.stderr.strip())
-        self._register_sdp_dbus()
+        else:
+            log.warning("sdptool add HID failed: %s → trying DBus fallback…", r.stderr.strip())
+            self._register_sdp_dbus()
 
     def _verify_sdp(self) -> None:
         r = subprocess.run(["sdptool", "browse", "local"], capture_output=True, text=True)
