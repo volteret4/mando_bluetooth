@@ -104,7 +104,7 @@ class BTHIDKeyboard:
         )
 
         props.Set("org.bluez.Adapter1", "Powered",             dbus.Boolean(True))
-        props.Set("org.bluez.Adapter1", "Alias",               dbus.String("BT-Keyboard-RPi"))
+        props.Set("org.bluez.Adapter1", "Alias",               dbus.String("BT-Keyboard"))
         # DiscoverableTimeout=0 → stays discoverable indefinitely
         props.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
         props.Set("org.bluez.Adapter1", "Discoverable",        dbus.Boolean(True))
