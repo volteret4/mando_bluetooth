@@ -93,17 +93,24 @@ class BTHIDKeyboard:
     def _register_sdp(self) -> None:
         import os
 
-        # The SDP socket can be at /run/sdp or /var/run/sdp (symlink on modern systems)
+        # SDP socket location varies by distro (/run/sdp or /var/run/sdp)
         sdp_socket = next(
             (p for p in ("/run/sdp", "/var/run/sdp") if os.path.exists(p)), None
         )
         if sdp_socket is None:
-            log.warning(
-                "SDP socket not found at /run/sdp or /var/run/sdp. "
-                "bluetoothd may not be running with --compat. "
-                "Run: sudo systemctl cat bluetooth | grep ExecStart"
+            log.error(
+                "SDP socket not found — bluetoothd is NOT running with --compat.\n"
+                "  Fix: check the binary path and create a systemd override:\n"
+                "    BT_BIN=$(systemctl cat bluetooth | grep ^ExecStart= | awk '{print $1}' | cut -d= -f2)\n"
+                "    sudo mkdir -p /etc/systemd/system/bluetooth.service.d\n"
+                "    sudo tee /etc/systemd/system/bluetooth.service.d/hid.conf <<EOF\n"
+                "    [Service]\n"
+                "    ExecStart=\n"
+                "    ExecStart=$BT_BIN --compat --noplugin=input\n"
+                "    EOF\n"
+                "    sudo systemctl daemon-reload && sudo systemctl restart bluetooth"
             )
-            log.warning("Falling back to DBus ProfileManager1…")
+            log.warning("Trying DBus fallback — HID may not work without SDP…")
             self._register_sdp_dbus()
             return
 
@@ -204,19 +211,32 @@ class BTHIDKeyboard:
     def _open_l2cap_server(self, psm: int) -> socket.socket:
         s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(("00:00:00:00:00:00", psm))
+        try:
+            s.bind(("00:00:00:00:00:00", psm))
+        except OSError as e:
+            raise OSError(
+                f"Cannot bind L2CAP PSM 0x{psm:02X}: {e}\n"
+                "  → Check that bluetoothd runs with --noplugin=input\n"
+                "    sudo systemctl cat bluetooth | grep ExecStart"
+            ) from e
         s.listen(1)
         return s
 
-    def wait_for_connection(self) -> None:
-        log.info("Opening L2CAP sockets on PSM 0x%02X and 0x%02X…", HID_CONTROL_PSM, HID_INTERRUPT_PSM)
+    def prepare_l2cap_servers(self) -> None:
+        """Open server sockets BEFORE making adapter discoverable to avoid race conditions."""
+        log.info("Opening L2CAP server sockets on PSM 0x%02X and 0x%02X…",
+                 HID_CONTROL_PSM, HID_INTERRUPT_PSM)
         self._ctrl_server = self._open_l2cap_server(HID_CONTROL_PSM)
         self._intr_server = self._open_l2cap_server(HID_INTERRUPT_PSM)
-        log.info("Waiting for TV to connect (pair the TV now)…")
+        log.info("L2CAP sockets ready — waiting for TV to connect")
+
+    def accept_hid_connection(self) -> None:
+        """Block until the TV connects both HID channels."""
+        assert self._ctrl_server and self._intr_server, "Call prepare_l2cap_servers() first"
         self._ctrl_client, ctrl_addr = self._ctrl_server.accept()
-        log.info("Control channel connected from %s", ctrl_addr)
+        log.info("Control channel  (PSM 0x11) connected from %s", ctrl_addr)
         self._intr_client, intr_addr = self._intr_server.accept()
-        log.info("Interrupt channel connected from %s — HID ready!", intr_addr)
+        log.info("Interrupt channel (PSM 0x13) connected from %s — HID ready!", intr_addr)
 
     # ------------------------------------------------------------------
     # HID report sending
@@ -376,8 +396,18 @@ def main() -> None:
     pairing.start()
 
     keyboard = BTHIDKeyboard(pairing)
+
+    # 1. Open L2CAP sockets FIRST — before the adapter becomes discoverable.
+    #    This prevents the race where the TV auto-connects before we're listening.
+    try:
+        keyboard.prepare_l2cap_servers()
+    except OSError as e:
+        sys.exit(str(e))
+
+    # 2. Configure adapter and register SDP (now the TV can discover & connect)
     keyboard.setup_bluetooth()
 
+    # 3. TCP command server (Beelink uses this to send keys AND the pairing pin)
     tcp_thread = threading.Thread(
         target=run_tcp_server,
         args=(args.host, args.port, keyboard),
@@ -385,15 +415,22 @@ def main() -> None:
     )
     tcp_thread.start()
 
+    log.info("=" * 55)
+    log.info("Servidor listo.")
+    log.info("  Si la TV pide un código de 6 dígitos:")
+    log.info("  → desde el Beelink escribe:  pin:XXXXXX")
+    log.info("  → o escribe el código aquí y pulsa Enter")
+    log.info("=" * 55)
+
     while True:
         try:
-            keyboard.wait_for_connection()
+            keyboard.accept_hid_connection()
         except OSError as e:
             log.error("L2CAP error: %s — retrying in 5 s…", e)
             time.sleep(5)
             continue
 
-        log.info("Ready. Beelink can now send commands to %s:%d", args.host, args.port)
+        log.info("HID activo. Beelink puede enviar comandos a %s:%d", args.host, args.port)
 
         # Keep alive: detect disconnect and re-listen
         while keyboard.is_connected:

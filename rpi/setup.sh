@@ -14,22 +14,24 @@ apt-get install -y python3 python3-dbus python3-gi bluez bluez-tools
 # --compat       → enables sdptool SDP socket
 # --noplugin=input → stops BlueZ input plugin from claiming HID PSMs 0x11/0x13
 #                    (those PSMs must be free for our server to bind to them)
-BT_SERVICE=/lib/systemd/system/bluetooth.service
-DESIRED_FLAGS="--compat --noplugin=input"
-
-if grep -q "ExecStart=.*--noplugin=input" "$BT_SERVICE"; then
-    echo "[OK] BlueZ flags already set ($DESIRED_FLAGS)"
-elif grep -q "ExecStart=.*--compat" "$BT_SERVICE"; then
-    # --compat present but --noplugin=input missing
-    sed -i "s|ExecStart=/usr/lib/bluetooth/bluetoothd --compat|ExecStart=/usr/lib/bluetooth/bluetoothd $DESIRED_FLAGS|" "$BT_SERVICE"
-    echo "[OK] Added --noplugin=input to BlueZ flags"
-else
-    sed -i "s|ExecStart=/usr/lib/bluetooth/bluetoothd|ExecStart=/usr/lib/bluetooth/bluetoothd $DESIRED_FLAGS|" "$BT_SERVICE"
-    echo "[OK] BlueZ flags set: $DESIRED_FLAGS"
+# Use a systemd drop-in override so we don't touch the distro-provided unit file.
+# The empty ExecStart= clears the original value before setting ours.
+# This also handles different distros that put bluetoothd in different paths.
+BT_BIN=$(systemctl cat bluetooth | grep "^ExecStart=" | head -1 | awk '{print $1}' | cut -d= -f2)
+if [ -z "$BT_BIN" ]; then
+    # Fallback: find the binary
+    BT_BIN=$(command -v bluetoothd || find /usr -name bluetoothd 2>/dev/null | head -1)
 fi
+echo "[INFO] bluetoothd binary: $BT_BIN"
 
-# Make sdptool writable by the bluetooth group
-chmod 777 /var/run/sdp 2>/dev/null || true
+OVERRIDE_DIR=/etc/systemd/system/bluetooth.service.d
+mkdir -p "$OVERRIDE_DIR"
+cat > "$OVERRIDE_DIR/hid.conf" << OVERRIDE
+[Service]
+ExecStart=
+ExecStart=$BT_BIN --compat --noplugin=input
+OVERRIDE
+echo "[OK] Drop-in override written: $OVERRIDE_DIR/hid.conf"
 
 systemctl daemon-reload
 systemctl restart bluetooth

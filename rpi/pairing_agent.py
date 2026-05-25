@@ -101,13 +101,14 @@ class PairingManager:
         self._pin_event.clear()
         self._pin_value = None
 
-        print("\n" + "=" * 50)
-        print("  TV solicita emparejamiento!")
-        print("  Introduce el código de 6 dígitos que muestra la TV.")
-        print("  Opciones:")
-        print("    [A] Escríbelo aquí y pulsa Enter")
-        print('    [B] Desde el Beelink: {"action":"pin","code":"XXXXXX"}')
-        print("=" * 50)
+        print("\n" + "=" * 55)
+        print("  EMPAREJAMIENTO BLUETOOTH — Passkey Entry")
+        print("  La TV muestra un código de 6 dígitos.")
+        print("  Introdúcelo usando UNA de estas opciones:")
+        print("    [A]  Aquí mismo → escríbelo y pulsa Enter")
+        print('    [B]  Desde el Beelink →  pin:XXXXXX')
+        print("  Tienes 60 segundos.")
+        print("=" * 55, flush=True)
 
         # Thread for console input (non-blocking)
         console_result: list[str] = []
@@ -151,9 +152,11 @@ class PairingManager:
             bus.get_object("org.bluez", "/org/bluez"),
             "org.bluez.AgentManager1",
         )
-        manager.RegisterAgent(AGENT_PATH, "KeyboardDisplay")
+        # KeyboardOnly → siempre Passkey Entry: TV muestra el código, nosotros lo devolvemos.
+        # Evita Numeric Comparison (que requiere confirmar en la TV y puede confundir).
+        manager.RegisterAgent(AGENT_PATH, "KeyboardOnly")
         manager.RequestDefaultAgent(AGENT_PATH)
-        log.info("Pairing agent registered with capability=KeyboardDisplay")
+        log.info("Pairing agent registered with capability=KeyboardOnly")
 
         loop = GLib.MainLoop()
         threading.Thread(target=loop.run, daemon=True, name="glib-loop").start()
