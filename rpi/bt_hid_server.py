@@ -24,6 +24,8 @@ import sys
 import threading
 import time
 
+import dbus
+
 from pairing_agent import PairingManager
 from hid import (
     HID_DESCRIPTOR,
@@ -79,15 +81,42 @@ class BTHIDKeyboard:
         if result.returncode != 0:
             log.warning("Command %s failed: %s", args, result.stderr.strip())
 
+    def _get_adapter_path(self) -> str:
+        """Return the DBus path of the first available Bluetooth adapter."""
+        bus = dbus.SystemBus()
+        manager = dbus.Interface(
+            bus.get_object("org.bluez", "/"),
+            "org.freedesktop.DBus.ObjectManager",
+        )
+        for path, ifaces in manager.GetManagedObjects().items():
+            if "org.bluez.Adapter1" in ifaces:
+                return str(path)
+        raise RuntimeError("No Bluetooth adapter found — is bluetooth running?")
+
     def setup_bluetooth(self) -> None:
-        log.info("Configuring Bluetooth adapter…")
-        self._run("hciconfig", "hci0", "up")
-        # Keyboard device class: Major=Peripheral(0x05), Minor=Keyboard(0x01)
-        self._run("hciconfig", "hci0", "class", "0x000540")
-        # piscan = discoverable + connectable
-        self._run("hciconfig", "hci0", "piscan")
-        self._run("hciconfig", "hci0", "name", "BT-Keyboard-RPi")
-        log.info("Adapter ready. Registering HID SDP record…")
+        adapter_path = self._get_adapter_path()
+        log.info("Configuring adapter %s via DBus…", adapter_path)
+
+        bus  = dbus.SystemBus()
+        props = dbus.Interface(
+            bus.get_object("org.bluez", adapter_path),
+            "org.freedesktop.DBus.Properties",
+        )
+
+        props.Set("org.bluez.Adapter1", "Powered",             dbus.Boolean(True))
+        props.Set("org.bluez.Adapter1", "Alias",               dbus.String("BT-Keyboard-RPi"))
+        # DiscoverableTimeout=0 → stays discoverable indefinitely
+        props.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
+        props.Set("org.bluez.Adapter1", "Discoverable",        dbus.Boolean(True))
+        # PairableTimeout=0 → stays pairable indefinitely
+        props.Set("org.bluez.Adapter1", "PairableTimeout",     dbus.UInt32(0))
+        props.Set("org.bluez.Adapter1", "Pairable",            dbus.Boolean(True))
+
+        # Keyboard device class is not exposed via Adapter1 — use hciconfig
+        hci = adapter_path.split("/")[-1]   # e.g. /org/bluez/hci0 → hci0
+        self._run("hciconfig", hci, "class", "0x000540")
+
+        log.info("Adapter ready: discoverable=True, pairable=True, class=0x000540")
         self._register_sdp()
 
     def _register_sdp(self) -> None:
