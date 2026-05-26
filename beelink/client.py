@@ -31,6 +31,17 @@ Navigation:
 Media:
   play  pause  stop  next  prev  mute  volup  voldown
 
+TV-specific (probar cuál funciona en tu Hisense VIDAA):
+  input         — candidato 1 para Input/Source  (consumer 0x0060)
+  input2        — candidato 2  (0x0086)
+  input3        — candidato 3  (0x00A0)
+  input4        — candidato 4  (0x0183)
+  youtube       — AL Internet Browser  (0x0196) — puede abrir YouTube
+  apps          — AC Media Select Home (0x023C)
+  chup / chdown — canal +/-
+  power         — encendido/apagado
+  consumer:XXXX — enviar cualquier código Consumer en hex, ej. consumer:0060
+
 Numbers & letters:
   Type any single character: a-z, A-Z, 0-9, space
 
@@ -44,6 +55,8 @@ Special:
 JSON raw mode (single line):
   {"action":"key","key":"UP"}
   {"action":"media","key":"VOLUP"}
+  {"action":"consumer","key":"YOUTUBE"}
+  {"action":"consumer","usage":150}
   {"action":"combo","mod":"LALT","key":"F4"}
   {"action":"type","text":"hello"}
 """
@@ -86,6 +99,18 @@ ALIASES: dict[str, dict] = {
     "menu":     {"action": "key", "key": "F1"},
     "guide":    {"action": "key", "key": "F2"},
     "search":   {"action": "media", "key": "SEARCH"},
+    # TV-specific (Hisense VIDAA candidates — probar cuál funciona)
+    "input":    {"action": "consumer", "key": "INPUT"},
+    "input2":   {"action": "consumer", "key": "INPUT2"},
+    "input3":   {"action": "consumer", "key": "INPUT3"},
+    "input4":   {"action": "consumer", "key": "INPUT4"},
+    "source":   {"action": "consumer", "key": "INPUT"},
+    "youtube":  {"action": "consumer", "key": "YOUTUBE"},
+    "apps":     {"action": "consumer", "key": "APPS"},
+    "smart":    {"action": "consumer", "key": "SMART"},
+    "chup":     {"action": "consumer", "key": "CH_UP"},
+    "chdown":   {"action": "consumer", "key": "CH_DOWN"},
+    "power":    {"action": "consumer", "key": "POWER"},
 }
 
 
@@ -135,6 +160,16 @@ def parse_input(text: str) -> dict | None:
     # type:<text> shorthand
     if text.lower().startswith("type:"):
         return {"action": "type", "text": text[5:]}
+
+    # consumer:XXXX — send raw Consumer Page usage code (hex)
+    if text.lower().startswith("consumer:"):
+        hex_part = text[9:].strip()
+        try:
+            usage = int(hex_part, 16)
+        except ValueError:
+            print(f"Formato incorrecto: consumer:XXXX donde XXXX es hex, ej. consumer:0060")
+            return None
+        return {"action": "consumer", "usage": usage}
 
     # Named alias
     lower = text.lower()

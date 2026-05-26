@@ -52,6 +52,20 @@ HID_DESCRIPTOR = bytes([
     0x09, 0x96,  #   AL Internet Browser
     0x81, 0x02,  #   INPUT (Data,Var,Abs)
     0xc0,        # END_COLLECTION
+    # Consumer direct (Report ID 3) - sends any Consumer Page usage code as a 16-bit value.
+    # Allows probing TV-specific codes (Input, YouTube, HDMI…) without changing the descriptor.
+    0x05, 0x0C,        # USAGE_PAGE (Consumer Devices)
+    0x09, 0x01,        # USAGE (Consumer Control)
+    0xa1, 0x01,        # COLLECTION (Application)
+    0x85, 0x03,        #   REPORT_ID (3)
+    0x15, 0x00,        #   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0xFF,  #   LOGICAL_MAXIMUM (65535)
+    0x75, 0x10,        #   REPORT_SIZE (16)
+    0x95, 0x01,        #   REPORT_COUNT (1)
+    0x19, 0x00,        #   USAGE_MINIMUM (0x0000)
+    0x2A, 0xFF, 0xFF,  #   USAGE_MAXIMUM (0xFFFF)
+    0x81, 0x00,        #   INPUT (Data,Array,Abs)
+    0xc0,              # END_COLLECTION
 ])
 
 # USB HID Usage Table keycodes (Section 10: Keyboard/Keypad)
@@ -98,6 +112,30 @@ MOD_RCTRL  = 0x10
 MOD_RSHIFT = 0x20
 MOD_RALT   = 0x40
 MOD_RGUI   = 0x80
+
+# Consumer Page usage codes for Report ID 3 (direct, arbitrary code)
+# These are candidates to try for TV-specific buttons — not all will work on every TV.
+# Use:  {"action": "consumer", "usage": 0x0060}
+# Or shorthand from client.py aliases.
+CONSUMER_CODES: dict[str, int] = {
+    # Input / Source candidates (try each until one opens the source menu)
+    "INPUT":      0x0060,  # Power — some Hisense map this to the source/input menu
+    "INPUT2":     0x0086,  # AL Spreadsheet (often remapped to Input on VIDAA)
+    "INPUT3":     0x00A0,  # VCR/TV
+    "INPUT4":     0x0183,  # AL Consumer Control Config (may open settings/input)
+    # Smart TV app / YouTube candidates
+    "YOUTUBE":    0x0196,  # AL Internet Browser — may launch YouTube on VIDAA
+    "APPS":       0x023C,  # AC Media Select Home
+    "SMART":      0x0223,  # AC Home (smart hub / launcher)
+    # Navigation extras
+    "AC_BACK":    0x0224,  # AC Back
+    "AC_FORWARD": 0x0225,  # AC Forward
+    # Channel / TV
+    "CH_UP":      0x009C,  # Channel Increment
+    "CH_DOWN":    0x009D,  # Channel Decrement
+    "POWER":      0x0030,  # Power toggle
+    "SLEEP":      0x0032,  # Sleep
+}
 
 # Consumer key bit positions in Report ID 2 (16-bit field, matches descriptor order)
 MEDIA_CODES: dict[str, int] = {

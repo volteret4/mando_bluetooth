@@ -31,6 +31,7 @@ from hid import (
     HID_DESCRIPTOR,
     KEY_CODES,
     MEDIA_CODES,
+    CONSUMER_CODES,
     MOD_NONE,
     MOD_LCTRL, MOD_LSHIFT, MOD_LALT, MOD_LGUI,
     MOD_RCTRL, MOD_RSHIFT, MOD_RALT, MOD_RGUI,
@@ -206,6 +207,15 @@ class BTHIDKeyboard:
             time.sleep(0.05)
             self._send_intr(bytes([0xA1, 0x02, 0x00, 0x00]))
 
+    def send_consumer(self, usage: int) -> None:
+        """Send an arbitrary Consumer Page usage code via Report ID 3."""
+        b0 = usage & 0xFF
+        b1 = (usage >> 8) & 0xFF
+        with self._lock:
+            self._send_intr(bytes([0xA1, 0x03, b0, b1]))
+            time.sleep(0.05)
+            self._send_intr(bytes([0xA1, 0x03, 0x00, 0x00]))
+
     def type_text(self, text: str) -> None:
         for ch in text:
             entry = _ASCII_TO_HID.get(ch)
@@ -251,6 +261,21 @@ class BTHIDKeyboard:
             text = str(msg.get("text", ""))
             self.type_text(text)
             return f"typed:{len(text)} chars"
+
+        if action == "consumer":
+            # Send an arbitrary Consumer Page usage code (Report ID 3).
+            # Accepts either a named code: {"action":"consumer","key":"YOUTUBE"}
+            # or a raw usage number: {"action":"consumer","usage":150}
+            raw = msg.get("usage")
+            if raw is not None:
+                usage = int(raw)
+            else:
+                name = str(msg.get("key", "")).upper()
+                usage = CONSUMER_CODES.get(name)
+                if usage is None:
+                    return f"Unknown consumer key: {name} (try usage:0xXXXX)"
+            self.send_consumer(usage)
+            return f"consumer:0x{usage:04X}"
 
         if action == "pin":
             code = str(msg.get("code", "")).strip()
