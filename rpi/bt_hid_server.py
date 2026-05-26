@@ -103,14 +103,16 @@ class BTHIDKeyboard:
             "org.freedesktop.DBus.Properties",
         )
 
-        props.Set("org.bluez.Adapter1", "Powered",             dbus.Boolean(True))
-        props.Set("org.bluez.Adapter1", "Alias",               dbus.String("BT-Keyboard"))
+        # variant_level=1 is required: Properties.Set expects signature "ssv" (variant),
+        # not "ssb"/"sss"/etc. dbus-python infers the base type without it and the call fails.
+        props.Set("org.bluez.Adapter1", "Powered",             dbus.Boolean(True,  variant_level=1))
+        props.Set("org.bluez.Adapter1", "Alias",               dbus.String("BT-Keyboard", variant_level=1))
         # DiscoverableTimeout=0 → stays discoverable indefinitely
-        props.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0))
-        props.Set("org.bluez.Adapter1", "Discoverable",        dbus.Boolean(True))
+        props.Set("org.bluez.Adapter1", "DiscoverableTimeout", dbus.UInt32(0,       variant_level=1))
+        props.Set("org.bluez.Adapter1", "Discoverable",        dbus.Boolean(True,  variant_level=1))
         # PairableTimeout=0 → stays pairable indefinitely
-        props.Set("org.bluez.Adapter1", "PairableTimeout",     dbus.UInt32(0))
-        props.Set("org.bluez.Adapter1", "Pairable",            dbus.Boolean(True))
+        props.Set("org.bluez.Adapter1", "PairableTimeout",     dbus.UInt32(0,       variant_level=1))
+        props.Set("org.bluez.Adapter1", "Pairable",            dbus.Boolean(True,  variant_level=1))
 
         # Keyboard device class is not exposed via Adapter1 — use hciconfig.
         # After setting the class, hciconfig may clear ISCAN, so we force
