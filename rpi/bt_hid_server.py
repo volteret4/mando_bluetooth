@@ -114,15 +114,17 @@ class BTHIDKeyboard:
         props.Set("org.bluez.Adapter1", "PairableTimeout",     dbus.UInt32(0,       variant_level=1))
         props.Set("org.bluez.Adapter1", "Pairable",            dbus.Boolean(True,  variant_level=1))
 
-        # Keyboard device class is not exposed via Adapter1 — use hciconfig.
-        # After setting the class, hciconfig may clear ISCAN, so we force
-        # piscan (page+inquiry scan) explicitly to ensure TV can discover us.
-        hci = adapter_path.split("/")[-1]   # e.g. /org/bluez/hci0 → hci0
-        self._run("hciconfig", hci, "class", "0x000540")
+        # Device class: btmgmt is required — hciconfig class gets overridden by BlueZ.
+        # btmgmt --index takes the numeric index, e.g. hci0 → 0.
+        hci = adapter_path.split("/")[-1]           # /org/bluez/hci0 → hci0
+        hci_index = hci.replace("hci", "")          # hci0 → 0
+        # Peripheral (5) + Keyboard (64 = 0x40)
+        self._run("btmgmt", "--index", hci_index, "class", "5", "64")
+        # Belt-and-suspenders: ensure PSCAN+ISCAN are active at HCI level too
         self._run("hciconfig", hci, "piscan")
 
-        # Log current HCI state so we can verify ISCAN/PSCAN are set
-        result = subprocess.run(["hciconfig", hci], capture_output=True, text=True)
+        # Log current HCI state to verify PSCAN/ISCAN and class
+        result = subprocess.run(["hciconfig", hci, "-a"], capture_output=True, text=True)
         for line in result.stdout.splitlines():
             log.info("hciconfig: %s", line)
 
