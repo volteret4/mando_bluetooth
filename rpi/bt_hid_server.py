@@ -93,7 +93,7 @@ class BTHIDKeyboard:
                 return str(path)
         raise RuntimeError("No Bluetooth adapter found — is bluetooth running?")
 
-    def setup_bluetooth(self) -> None:
+    def setup_bluetooth(self, skip_sdp: bool = False) -> None:
         adapter_path = self._get_adapter_path()
         log.info("Configuring adapter %s via DBus…", adapter_path)
 
@@ -112,12 +112,23 @@ class BTHIDKeyboard:
         props.Set("org.bluez.Adapter1", "PairableTimeout",     dbus.UInt32(0))
         props.Set("org.bluez.Adapter1", "Pairable",            dbus.Boolean(True))
 
-        # Keyboard device class is not exposed via Adapter1 — use hciconfig
+        # Keyboard device class is not exposed via Adapter1 — use hciconfig.
+        # After setting the class, hciconfig may clear ISCAN, so we force
+        # piscan (page+inquiry scan) explicitly to ensure TV can discover us.
         hci = adapter_path.split("/")[-1]   # e.g. /org/bluez/hci0 → hci0
         self._run("hciconfig", hci, "class", "0x000540")
+        self._run("hciconfig", hci, "piscan")
 
-        log.info("Adapter ready: discoverable=True, pairable=True, class=0x000540")
-        self._register_sdp()
+        # Log current HCI state so we can verify ISCAN/PSCAN are set
+        result = subprocess.run(["hciconfig", hci], capture_output=True, text=True)
+        for line in result.stdout.splitlines():
+            log.info("hciconfig: %s", line)
+
+        if skip_sdp:
+            log.info("Adapter ready (SDP skipped — use --no-sdp only for discovery tests)")
+        else:
+            log.info("Adapter ready: discoverable=True, pairable=True, class=0x000540")
+            self._register_sdp()
 
     def _register_sdp(self) -> None:
         # Use DBus ProfileManager1 — more reliable than sdptool for HID on modern BlueZ.
@@ -307,7 +318,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Bluetooth HID keyboard server")
     parser.add_argument("--host", default="0.0.0.0", help="TCP bind address")
     parser.add_argument("--port", type=int, default=5555, help="TCP command port")
-    parser.add_argument("--no-sdp", action="store_true", help="Skip SDP registration (if already done)")
+    parser.add_argument("--no-sdp", action="store_true",
+                        help="Skip RegisterProfile/SDP (useful for testing TV discovery)")
     args = parser.parse_args()
 
     if sys.platform != "linux":
@@ -325,8 +337,8 @@ def main() -> None:
     except OSError as e:
         sys.exit(str(e))
 
-    # 2. Configure adapter and register SDP (now the TV can discover & connect)
-    keyboard.setup_bluetooth()
+    # 2. Configure adapter and (optionally) register SDP
+    keyboard.setup_bluetooth(skip_sdp=args.no_sdp)
 
     # 3. TCP command server (Beelink uses this to send keys AND the pairing pin)
     tcp_thread = threading.Thread(
